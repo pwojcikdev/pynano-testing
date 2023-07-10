@@ -383,8 +383,8 @@ class NanoNet:
         burn_amount = int(self.node_env["NANO_TEST_BURN_AMOUNT_RAW"])
         self.genesis.account.send(env.BURN_ACCOUNT, burn_amount)
 
-    def setup_genesis_node(self):
-        node = self.create_node(do_not_peer=True, name="genesis")
+    def setup_genesis_node(self, ledger=None):
+        node = self.create_node(do_not_peer=True, name="genesis", ledger=ledger)
         wallet, account = node.setup_genesis()
         self.__genesis = NodeWalletAccountTuple(node, wallet, account)
 
@@ -560,7 +560,9 @@ class NanoNet:
         return node
 
     def create_prom_exporter(self, node: NanoNode):
-        command = f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        command = (
+            f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        )
 
         container_name = f"{env.PREFIX}_promexport_{node.name}"
 
