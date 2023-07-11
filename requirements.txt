@@ -1,3 +1,4 @@
 nanolib
 ed25519-blake2b
 environs
+joblib
