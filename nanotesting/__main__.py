@@ -65,8 +65,13 @@ def fix_all():
     joblib.dump(ndata, f"{DUMP_DIRNAME}/dump_fixed", compress=False, protocol=5)
 
 
+def stop_all():
+    # TODO: Dedicated stop function
+    setup_empty()
+
+
 def main():
-    commands = {"save": save_all, "load": load_all, "fix": fix_all}
+    commands = {"stop": stop_all, "save": save_all, "load": load_all, "fix": fix_all}
 
     parser = argparse.ArgumentParser(description="Save or load NanoNet data.")
     parser.add_argument("command", choices=commands.keys(), help="Specify whether to save or load data.")
