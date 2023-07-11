@@ -1,3 +1,4 @@
+import io
 import nanolib
 from decorator import decorator
 
@@ -39,3 +40,12 @@ def title_bar(func, name=None, no_header=False, no_footer=False, *args, **kw):
         print(f"================ {strike(name)}")
 
     return result
+
+
+def read_all(bits):
+    with io.BytesIO() as f:
+        for chunk in bits:
+            f.write(chunk)
+        f.seek(0)
+        data = f.read()
+        return data

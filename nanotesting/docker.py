@@ -155,7 +155,9 @@ class NanoNode:
     def stop(self):
         print("Stopping:", self.name)
 
-        self.rpc.stop()
+        if self.container.status != "exited":
+            self.rpc.stop()
+
         self.ensure_stopped()
 
     @retry(tries=50, delay=0.5)
@@ -255,23 +257,33 @@ class NanoNode:
         confirmations = res["confirmations"]
         return AecInfo(confirmed, unconfirmed, confirmations)
 
+    # TODO: Use pull_data
     def pull_ledger(self):
         self.container.reload()
         assert self.container.status == "exited"
 
         bits, stat = self.container.get_archive(f"{env.NANO_DATA_PATH}/data.ldb")
-        with io.BytesIO() as f:
-            for chunk in bits:
-                f.write(chunk)
-            f.seek(0)
-            data = f.read()
-            return data
+        return read_all(bits)
 
+    # TODO: Use push_data
     def push_ledger(self, ledger):
         self.container.reload()
         assert self.container.status in {"exited", "created"}
 
         self.container.put_archive(f"{env.NANO_DATA_PATH}/", ledger)
+
+    def pull_data(self, path=f"{env.NANO_DATA_PATH}"):
+        self.container.reload()
+        assert self.container.status == "exited"
+
+        bits, stat = self.container.get_archive(path)
+        return read_all(bits)
+
+    def push_data(self, data, path=f"{env.NANO_DATA_PATH}"):
+        self.container.reload()
+        assert self.container.status in {"exited", "created"}
+
+        self.container.put_archive(os.path.dirname(path), data)
 
     def print_confirmations(self):
         for root in self.aec.confirmations:
@@ -349,31 +361,73 @@ class NodeWalletAccountTuple(NamedTuple):
 
 class NanoNet:
     def __init__(self, network_type="test"):
-        self.runid = NanoNet.generate_runid()
+        self.runid = self.__generate_runid()
         self.nodes: list[NanoNode] = []
         self.__node_containers: list[NanoNode] = []
         self.network_type = network_type
         self.__default_ledger = None
-        self.__name_ctr = 0
+        self.client = docker.from_env()
+        self.node_env = dotenv.dotenv_values("node.env")
 
-    @staticmethod
-    def generate_runid():
+    def __generate_runid(self):
         dt = datetime.now()
         s = dt.strftime("%Y-%m-%d_%H-%M-%S")
         return f"{env.PREFIX}_{s.replace(' ', '_')}"
 
-    @title_bar(name="INITIALIZE NANO TEST NETWORK")
-    def setup(self):
+    @staticmethod
+    def create(network_type="test"):
+        nanonet = NanoNet(network_type=network_type)
+        nanonet.__setup()
+        return nanonet
+
+    @staticmethod
+    def attach():
+        nanonet = NanoNet()
+        nanonet.__attach()
+        return nanonet
+
+    @staticmethod
+    def load(data):
+        nanonet = NanoNet()
+        nanonet.__setup()
+        nanonet.__load(data)
+        return nanonet
+
+    @title_bar(name="ATTACH NANONET")
+    def __attach(self):
+        for container in self.client.containers.list(all=True, filters={"name": f"{env.PREFIX}_node-"}):
+            print("attach node:", container.name)
+
+            self.__node_containers.append(container)
+            node = NanoNode(container, self.node_env)
+            self.nodes.append(node)
+
+            pass
+        pass
+
+    @title_bar(name="SETUP NANONET")
+    def __setup(self):
         print("Run ID:", self.runid)
 
-        self.client = docker.from_env()
-        self.node_env = dotenv.dotenv_values("node.env")
-
         self.__cleanup_docker()
-
         self.__setup_network()
         # self.__setup_genesis_node()
         # self.__setup_burn()
+
+    @title_bar(name="SAVE NANONET")
+    def save(self):
+        data = {}
+        for node in self.nodes:
+            node.stop()
+            d = node.pull_data()
+            data[node.name] = d
+        return data
+
+    @title_bar(name="LOAD NANONET")
+    def __load(self, data):
+        for i, (name, d) in enumerate(data.items()):
+            print("loading node:", name, "data:", len(d))
+            self.create_node(name=name, data=d)
 
     def stop(self):
         # self.__cleanup_docker()
@@ -394,7 +448,6 @@ class NanoNet:
 
     def __setup_network(self):
         self.network_name = f"{env.PREFIX}_network"
-
         try:
             self.network = self.client.networks.get(self.network_name)
         except:
@@ -422,6 +475,7 @@ class NanoNet:
         prom_exporter=True,
         ledger: bytes = None,
         ledger_path: str = None,
+        data: bytes = None,
         data_path: str = None,
         redirect_rpc=True,
         rpc_port: int = None,
@@ -432,7 +486,8 @@ class NanoNet:
     ) -> NanoNode:
         print("name:", name)
 
-        assert not (ledger_path and ledger)
+        # Ensure that only one of the params is set
+        assert sum(x is not None for x in (ledger, ledger_path, data, data_path)) <= 1
 
         node_flags = [*env.DEFAULT_NODE_FLAGS, *node_flags]
 
@@ -465,8 +520,7 @@ class NanoNet:
             }
 
         if not name:
-            name = f"{env.PREFIX}_node-{self.__name_ctr}"
-            self.__name_ctr += 1
+            name = f"{env.PREFIX}_node-{len(self.__node_containers)}"
         else:
             name = f"{env.PREFIX}_node-{name}"
 
@@ -546,6 +600,8 @@ class NanoNet:
 
         if ledger:
             node.push_ledger(ledger)
+        if data:
+            node.push_data(data)
 
         node.start()
 
@@ -618,8 +674,7 @@ def initialize(network_type="test"):
 
     signal.signal(signal.SIGINT, signal_handler)
 
-    nanonet = NanoNet(network_type=network_type)
-    nanonet.setup()
+    nanonet = NanoNet.create(network_type)
 
     global _default_nanonet
     _default_nanonet = nanonet
