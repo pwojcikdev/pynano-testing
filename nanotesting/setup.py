@@ -80,7 +80,7 @@ def setup_voting_weight_uniform(count, reserved_raw) -> Tuple[NanoNet, list[Nano
 
     nanonet.ensure_all_confirmed(populate_backlog=True)
 
-    return nanonet, rep_keys, reps
+    return nanonet, reps, rep_keys
 
 
 @title_bar(name="SETUP LEDGER")
