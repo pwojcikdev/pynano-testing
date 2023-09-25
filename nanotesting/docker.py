@@ -585,6 +585,7 @@ class NanoNet:
             volumes=volumes,
             nano_cpus=nano_cpus,
             tmpfs=tmpfs,
+            labels={"runid": self.runid},
         )
 
         self.__node_containers.append(container)
@@ -616,9 +617,7 @@ class NanoNet:
         return node
 
     def create_prom_exporter(self, node: NanoNode):
-        command = (
-            f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
-        )
+        command = f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
 
         container_name = f"{env.PREFIX}_promexport_{node.name}"
 
