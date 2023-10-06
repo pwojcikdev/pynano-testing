@@ -1,6 +1,6 @@
 from typing import Union
 from .docker import NanoNode, NanoNodeRPC
-from .queue import BlockQueue
+from .block_queue import BlockQueue
 
 
 def process_block_queue(block_queue: BlockQueue, node: Union[NanoNode, NanoNodeRPC], async_process=True):

@@ -43,22 +43,22 @@ def distribute_voting_weight_uniform(
 
 @memory.cache
 def setup_voting_weight_uniform_ledger(count, reserved_raw):
-    nanonet = default_nanonet()
-    setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False, prom_exporter=False)
-    # setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False)
+    with NanoNet.create() as nanonet:
+        setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False, prom_exporter=False)
+        # setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False)
 
-    genesis_wallet, genesis_account = setup_node.setup_genesis()
-    # genesis_account.send(BURN_ACCOUNT, genesis_account.balance / 10)
+        genesis_wallet, genesis_account = setup_node.setup_genesis()
+        # genesis_account.send(BURN_ACCOUNT, genesis_account.balance / 10)
 
-    setup_reps = distribute_voting_weight_uniform(setup_node, genesis_account, count, reserved_raw)
+        setup_reps = distribute_voting_weight_uniform(setup_node, genesis_account, count, reserved_raw)
 
-    rep_keys = [rep_account.private_key for rep_wallet, rep_account in setup_reps]
+        rep_keys = [rep_account.private_key for rep_wallet, rep_account in setup_reps]
 
-    setup_node.stop()
+        setup_node.stop()
 
-    ledger = setup_node.pull_ledger()
+        ledger = setup_node.pull_ledger()
 
-    return ledger, rep_keys
+        return ledger, rep_keys
 
 
 @title_bar(name="SETUP VOTING WEIGHT UNIFORM")

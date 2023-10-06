@@ -27,8 +27,7 @@ class BlockQueue:
 
     @classmethod
     def default(cls):
-        if cls._instance is None:
-            raise Exception("Missing BlockQueue context")
+        assert cls._instance is not None, "Missing BlockQueue context"
         return cls._instance
 
     def put(self, block):

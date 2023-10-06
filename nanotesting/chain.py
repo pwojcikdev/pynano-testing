@@ -3,7 +3,7 @@ import queue
 from typing import Protocol, Union
 import nanolib
 
-from .queue import BlockQueue
+from .block_queue import BlockQueue
 
 from . import env
 
