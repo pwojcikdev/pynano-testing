@@ -499,7 +499,7 @@ class NanoNet:
             node_cli_options = f"delay {node_cli_options}"
 
         # node_main_command = f"nano_node daemon {node_cli_options} --config node.peering_port=17075 {additional_cli} -l"
-        node_main_command = f"nano_node daemon {node_cli_options} {cli_flags} {env.NODE_FLAGS} -l"
+        node_main_command = f"nano_node --daemon {node_cli_options} {cli_flags} {env.NODE_FLAGS}"
 
         node_env = self.node_env
 
@@ -574,6 +574,16 @@ class NanoNet:
             else:
                 tmpfs = {"/root/Nano/": ""}
 
+        labels = {"runid": self.runid}
+
+        # network throttling
+        labels = {
+            "com.docker-tc.enabled": "1",
+            "com.docker-tc.limit:": "10mbit",
+            "com.docker-tc.delay": "40ms",
+            **labels,
+        }
+
         container = self.client.containers.create(
             image_name,
             node_main_command,
@@ -585,7 +595,8 @@ class NanoNet:
             volumes=volumes,
             nano_cpus=nano_cpus,
             tmpfs=tmpfs,
-            labels={"runid": self.runid},
+            labels=labels,
+            cap_add=["NET_ADMIN"],
         )
 
         self.__node_containers.append(container)
@@ -617,7 +628,9 @@ class NanoNet:
         return node
 
     def create_prom_exporter(self, node: NanoNode):
-        command = f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        command = (
+            f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        )
 
         container_name = f"{env.PREFIX}_promexport_{node.name}"
 
