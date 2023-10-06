@@ -1,4 +1,8 @@
+import os
+
 from joblib import Memory
 
-cachedir = ".job-cache"
-memory = Memory(cachedir)
+CACHE_DIR = "/data-raid/nanotesting-cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+memory = Memory(CACHE_DIR)
