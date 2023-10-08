@@ -11,19 +11,19 @@ DUMP_DIRNAME = ".nanonet-dumps"
 
 
 def save_all():
-    nanonet = NanoNet.attach()
-    data = nanonet.save()
+    with NanoNet.attach() as nanonet:
+        data = nanonet.save()
 
-    os.mkdir(DUMP_DIRNAME)
-    joblib.dump(data, f"{DUMP_DIRNAME}/dump", compress=False, protocol=5)
+        os.mkdir(DUMP_DIRNAME)
+        joblib.dump(data, f"{DUMP_DIRNAME}/dump", compress=False, protocol=5)
 
 
 def load_all():
     with open(f"{DUMP_DIRNAME}/dump_fixed", "rb") as f:
         data = joblib.load(f)
 
-    nanonet = NanoNet.load(data)
-    nanonet.ensure_all_confirmed()
+    with NanoNet.load(data) as nanonet:
+        nanonet.ensure_all_confirmed()
 
 
 def remove_files_from_tar(tar_bytes, ignored_files):
@@ -66,8 +66,8 @@ def fix_all():
 
 
 def stop_all():
-    # TODO: Dedicated stop function
-    setup_empty()
+    with NanoNet.create() as nanonet:
+        pass
 
 
 def main():

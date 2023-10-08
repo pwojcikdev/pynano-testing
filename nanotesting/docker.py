@@ -1,4 +1,5 @@
 from __future__ import annotations
+from contextlib import contextmanager
 
 import io
 import json
@@ -25,6 +26,8 @@ from retry import retry
 from . import env
 from .chain import Block, BlockQueue, Chain
 from .common import *
+
+docker_client = docker.from_env()
 
 
 class NanoWalletAccount:
@@ -359,43 +362,74 @@ class NodeWalletAccountTuple(NamedTuple):
     account: NanoWalletAccount
 
 
+def generate_runid():
+    dt = datetime.now()
+    s = dt.strftime("%Y-%m-%d_%H-%M-%S")
+    return f"{env.PREFIX}_{s.replace(' ', '_')}"
+
+
 class NanoNet:
+    _instance = None
+
     def __init__(self, network_type="test"):
-        self.runid = self.__generate_runid()
+        self.runid = generate_runid()
         self.nodes: list[NanoNode] = []
         self.__node_containers: list[NanoNode] = []
         self.network_type = network_type
         self.__default_ledger = None
-        self.client = docker.from_env()
         self.node_env = dotenv.dotenv_values("node.env")
 
-    def __generate_runid(self):
-        dt = datetime.now()
-        s = dt.strftime("%Y-%m-%d_%H-%M-%S")
-        return f"{env.PREFIX}_{s.replace(' ', '_')}"
+    @classmethod
+    @contextmanager
+    def create(cls, network_type="test"):
+        assert cls._instance is None, "NanoNet context already exists"
 
-    @staticmethod
-    def create(network_type="test"):
         nanonet = NanoNet(network_type=network_type)
-        nanonet.__setup()
-        return nanonet
+        cls._instance = nanonet
+        try:
+            nanonet.__setup()
+            yield nanonet
+        finally:
+            nanonet.stop()
+            cls._instance = None
 
-    @staticmethod
-    def attach():
-        nanonet = NanoNet()
-        nanonet.__attach()
-        return nanonet
+    @classmethod
+    @contextmanager
+    def attach(cls):
+        assert cls._instance is None, "NanoNet context already exists"
 
-    @staticmethod
-    def load(data):
         nanonet = NanoNet()
-        nanonet.__setup()
-        nanonet.__load(data)
-        return nanonet
+        cls._instance = nanonet
+        try:
+            nanonet.__attach()
+            yield nanonet
+        finally:
+            nanonet.stop()
+            cls._instance = None
+
+    @classmethod
+    @contextmanager
+    def load(cls, data):
+        assert cls._instance is None, "NanoNet context already exists"
+
+        nanonet = NanoNet()
+        cls._instance = nanonet
+        try:
+            nanonet.__setup()
+            nanonet.__load(data)
+            yield nanonet
+        finally:
+            nanonet.stop()
+            cls._instance = None
+
+    @classmethod
+    def current(cls):
+        assert cls._instance is not None, "Missing NanoNet context"
+        return cls._instance
 
     @title_bar(name="ATTACH NANONET")
     def __attach(self):
-        for container in self.client.containers.list(all=True, filters={"name": f"{env.PREFIX}_node-"}):
+        for container in docker_client.containers.list(all=True, filters={"name": f"{env.PREFIX}_node-"}):
             print("attach node:", container.name)
 
             self.__node_containers.append(container)
@@ -449,13 +483,13 @@ class NanoNet:
     def __setup_network(self):
         self.network_name = f"{env.PREFIX}_network"
         try:
-            self.network = self.client.networks.get(self.network_name)
+            self.network = docker_client.networks.get(self.network_name)
         except:
-            self.network = self.client.networks.create(self.network_name, check_duplicate=True)
+            self.network = docker_client.networks.create(self.network_name, check_duplicate=True)
 
     @title_bar(name="CLEANUP DOCKER")
     def __cleanup_docker(self):
-        for cont in self.client.containers.list(all=True):
+        for cont in docker_client.containers.list(all=True):
             if cont.name.startswith(env.PREFIX):
                 print("Removing:", cont.name)
                 cont.remove(force=True)
@@ -584,7 +618,7 @@ class NanoNet:
             **labels,
         }
 
-        container = self.client.containers.create(
+        container = docker_client.containers.create(
             image_name,
             node_main_command,
             detach=True,
@@ -628,13 +662,11 @@ class NanoNet:
         return node
 
     def create_prom_exporter(self, node: NanoNode):
-        command = (
-            f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
-        )
+        command = f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
 
         container_name = f"{env.PREFIX}_promexport_{node.name}"
 
-        container = self.client.containers.run(
+        container = docker_client.containers.run(
             env.PROM_IMAGE,
             command,
             detach=True,
@@ -654,7 +686,7 @@ class NanoNet:
             f"{env.TCPDUMP_PATH.joinpath(self.runid).expanduser()}/:/data/",
         ]
 
-        container = self.client.containers.run(
+        container = docker_client.containers.run(
             env.NETSHOOT_IMAGE,
             command,
             detach=True,
@@ -676,33 +708,20 @@ def random_chain() -> Chain:
     return Chain(account_id, private_key)
 
 
-def default_nanonet():
-    global _default_nanonet
-    return _default_nanonet
-
-
-def initialize(network_type="test"):
-    env.print_env_info()
-
-    signal.signal(signal.SIGINT, signal_handler)
-
-    nanonet = NanoNet.create(network_type)
-
-    global _default_nanonet
-    _default_nanonet = nanonet
-
-    return nanonet
+env.print_env_info()
 
 
 def signal_handler(signal, frame):
     print("SIGINT or CTRL-C detected. Exiting gracefully")
 
-    global _default_nanonet
-    if _default_nanonet:
-        _default_nanonet.stop()
+    if NanoNet.current():
+        NanoNet.current().stop()
 
     sys.exit(0)
 
 
+signal.signal(signal.SIGINT, signal_handler)
+
 if __name__ == "__main__":
-    initialize()
+    with NanoNet.create() as nanonet:
+        print("nanonet created")
