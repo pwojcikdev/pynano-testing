@@ -1,4 +1,6 @@
 import io
+import tarfile
+
 import nanolib
 from decorator import decorator
 
@@ -49,3 +51,26 @@ def read_all(bits):
         f.seek(0)
         data = f.read()
         return data
+
+
+def remove_files_from_tar(tar_bytes, ignored_files):
+    original_tar = tarfile.open(fileobj=io.BytesIO(tar_bytes))
+    new_tar_bytes = io.BytesIO()
+
+    # Open a new tarfile to write to
+    with tarfile.open(fileobj=new_tar_bytes, mode="w") as new_tar:
+        # Go through each member of the tarfile
+        for member in original_tar.getmembers():
+            # If this member isn't in the list of ignored files
+            if member.name not in ignored_files:
+                print("keeping:", member.name)
+                # Extract the file to the tar buffer
+                new_tar.addfile(member, original_tar.extractfile(member))
+            else:
+                print("skipping:", member.name)
+
+    new_tar_bytes.seek(0)
+    result = new_tar_bytes.read()
+    original_tar.close()
+
+    return result

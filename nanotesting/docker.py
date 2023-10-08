@@ -368,6 +368,9 @@ def generate_runid():
     return f"{env.PREFIX}_{s.replace(' ', '_')}"
 
 
+IGNORED_FILES = ["Nano/config-node.toml", "Nano/config-rpc.toml"]
+
+
 class NanoNet:
     _instance = None
 
@@ -454,6 +457,7 @@ class NanoNet:
         for node in self.nodes:
             node.stop()
             d = node.pull_data()
+            d = remove_files_from_tar(d, IGNORED_FILES)
             data[node.name] = d
         return data
 
