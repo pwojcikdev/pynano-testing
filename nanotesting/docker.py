@@ -26,6 +26,7 @@ from retry import retry
 from . import env
 from .chain import Block, BlockQueue, Chain
 from .common import *
+from .broadcaster import *
 
 docker_client = docker.from_env()
 
@@ -114,6 +115,11 @@ class NanoNodeRPC:
         else:
             return self.rpc.process(json)
 
+    def process_blocks(self, blocks: list[Union[Block, str]], async_process=True):
+        for block in blocks:
+            self.process_block(block, async_process=async_process)
+
+    # TODO: REMOVE, USES CUSTOM EXPERIMENTAL RPC
     @retry(tries=3, delay=0.5)
     def broadcast_block(self, block: Union[Block, str]):
         json = block_to_json(block)
@@ -219,6 +225,10 @@ class NanoNode:
 
     def process_block(self, block: Block, async_process=True):
         return self.rpc_node.process_block(block, async_process=async_process)
+
+    def process_blocks(self, blocks: list[Block], async_process=True):
+        for block in blocks:
+            self.process_block(block, async_process=async_process)
 
     def block(self, hash: str, load_previous=False) -> Block:
         block_nlib = self.__nlib_block(hash)
@@ -703,6 +713,13 @@ class NanoNet:
 
     def ensure_all_confirmed(self, blocks=None, populate_backlog=False):
         ensure_all_confirmed(self.nodes, blocks=blocks, populate_backlog=populate_backlog)
+
+    @title_bar(name="BROADCAST PARALLEL (NANONET)")
+    def broadcast_parallel(self, blocks: list[dict]):
+        print("Broadcasting:", len(blocks))
+        global broadcaster  # to avoid python bug where it just hangs when exiting function
+        broadcaster = NanoNetBroadcaster(self)
+        broadcaster.publish_all(blocks)
 
 
 def random_chain() -> Chain:

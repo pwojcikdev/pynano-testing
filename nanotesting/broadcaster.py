@@ -1,7 +1,6 @@
 from concurrent.futures import ProcessPoolExecutor
 from typing import Protocol
 from .common import title_bar
-from .docker import NanoNet, NanoNode
 
 from nanoprotocol.blocks import BlockWrapper
 from nanoprotocol import channel
@@ -18,7 +17,7 @@ class NanoBroadcaster(Protocol):
 
 
 class NanoNodeBroadcaster:
-    def __init__(self, node: NanoNode, parallelism=4):
+    def __init__(self, node: 'NanoNode', parallelism=4):
         self.node = node
         self.pool = ProcessPoolExecutor(
             initializer=NanoNodeBroadcaster.setup_channel,
@@ -61,7 +60,7 @@ class NanoNodeBroadcaster:
 
 
 class NanoNetBroadcaster:
-    def __init__(self, nanonet: NanoNet, parallelism=4):
+    def __init__(self, nanonet: 'NanoNet', parallelism=4):
         self.broadcasters = [
             NanoNodeBroadcaster(node, parallelism=parallelism) for node in nanonet.nodes
         ]
@@ -79,14 +78,6 @@ class NanoNetBroadcaster:
         results = [future.result() for future in futures]
 
         print("done net broadcasting:", len(blocks))
-
-
-@title_bar(name="BROADCAST PARALLEL")
-def broadcast_parallel(nanonet: NanoNet, blocks: list[dict]):
-    print("Broadcasting:", len(blocks))
-    global broadcaster  # to avoid python bug where it just hangs when exiting function
-    broadcaster = NanoNetBroadcaster(nanonet)
-    broadcaster.publish_all(blocks)
 
 
 class InMemoryBroadcaster:
