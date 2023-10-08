@@ -6,7 +6,7 @@ from .common import *
 from .docker import NanoNet
 
 
-@title_bar(name="INITIALIZE REPRESENTATIVES")
+@title_bar(name="DISTRIBUTE VOTING WEIGHT UNIFORM")
 def distribute_voting_weight_uniform(
     node: NanoNode,
     genesis_account: NanoWalletAccount,
@@ -43,8 +43,7 @@ def distribute_voting_weight_uniform(
 
 
 @memory.cache
-@title_bar(name="SETUP VOTING WEIGHT UNIFORM")
-def setup_voting_weight_uniform_ledger(count, reserved_raw):
+def __voting_weight_uniform(count, reserved_raw):
     with NanoNet.create() as nanonet:
         setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False, prom_exporter=False)
         # setup_node = nanonet.create_node(name="setup", do_not_peer=True, track=False)
@@ -57,17 +56,16 @@ def setup_voting_weight_uniform_ledger(count, reserved_raw):
         setup_node.stop()
         ledger = setup_node.pull_ledger()
 
-        return {
-            "ledger": ledger,
-            "rep_keys": rep_keys,
-        }
+        return ledger, rep_keys
 
 
 @contextmanager
-@title_bar(name="LOAD TEST SETUP")
-def load(test_setup):
+@title_bar(name="SETUP VOTING WEIGHT UNIFORM")
+def voting_weight_uniform(count, reserved_raw):
+    ledger, rep_keys = __voting_weight_uniform(count, reserved_raw)
+
     with NanoNet.create() as nanonet:
-        nanonet.set_default_ledger(test_setup["ledger"])
+        nanonet.set_default_ledger(ledger)
         nanonet.setup_genesis_node()
 
         def setup_rep_node(idx, key):
@@ -75,37 +73,8 @@ def load(test_setup):
             wallet = node.create_wallet(private_key=key)
             return node, wallet
 
-        reps = [setup_rep_node(idx, key) for idx, key in enumerate(test_setup["rep_keys"])]
+        reps = [setup_rep_node(idx, key) for idx, key in enumerate(rep_keys)]
 
         nanonet.ensure_all_confirmed(populate_backlog=True)
 
-        yield nanonet
-
-
-@title_bar(name="SETUP VOTING WEIGHT UNIFORM")
-def setup_voting_weight_uniform(count, reserved_raw) -> Tuple[NanoNet, list[NanoNode]]:
-    nanonet = initialize()
-
-    ledger, rep_keys = setup_voting_weight_uniform_ledger(count, reserved_raw)
-
-    nanonet.set_default_ledger(ledger)
-
-    nanonet.setup_genesis_node()
-
-    def setup_rep_node(idx, key):
-        node = nanonet.create_node(name=f"rep_{idx}")
-        wallet = node.create_wallet(private_key=key)
-        return node, wallet
-
-    reps = [setup_rep_node(idx, key) for idx, key in enumerate(rep_keys)]
-
-    nanonet.ensure_all_confirmed(populate_backlog=True)
-
-    return nanonet, reps, rep_keys
-
-
-@title_bar(name="SETUP EMPTY")
-def setup_empty():
-    nanonet = initialize()
-    # nanonet.setup_genesis_node()
-    return nanonet
+        yield nanonet, reps
