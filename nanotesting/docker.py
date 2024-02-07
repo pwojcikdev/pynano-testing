@@ -169,7 +169,7 @@ class NanoNode:
 
         self.ensure_stopped()
 
-    @retry(tries=50, delay=0.5)
+    @retry(tries=100, delay=0.5)
     def ensure_started(self):
         self.rpc.version()
         print("Started:", self.name)
@@ -391,6 +391,7 @@ class NanoNet:
         self.network_type = network_type
         self.__default_ledger = None
         self.node_env = dotenv.dotenv_values("node.env")
+        self.network_name = f"{env.PREFIX}_network"
 
     @classmethod
     @contextmanager
@@ -495,18 +496,28 @@ class NanoNet:
         return self.__genesis
 
     def __setup_network(self):
-        self.network_name = f"{env.PREFIX}_network"
         try:
             self.network = docker_client.networks.get(self.network_name)
         except:
+            # self.network = docker_client.networks.create(self.network_name, check_duplicate=True, internal=True)
             self.network = docker_client.networks.create(self.network_name, check_duplicate=True)
 
     @title_bar(name="CLEANUP DOCKER")
     def __cleanup_docker(self):
+        # Remove all containers
         for cont in docker_client.containers.list(all=True):
             if cont.name.startswith(env.PREFIX):
-                print("Removing:", cont.name)
+                print("Removing container:", cont.name)
                 cont.remove(force=True)
+
+        # Remove the network
+        try:
+            network = docker_client.networks.get(self.network_name)
+            print("Removing network:", network.name)
+            network.remove()
+        except Exception as e:
+            print("Could not remove network:", e)
+            pass
 
     def set_default_ledger(self, ledger):
         self.__default_ledger = ledger
@@ -676,7 +687,9 @@ class NanoNet:
         return node
 
     def create_prom_exporter(self, node: NanoNode):
-        command = f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        command = (
+            f"--host 127.0.0.1 --port {node.host_rpc_port} --hostname {node.name} --interval 1 --runid {self.runid}"
+        )
 
         container_name = f"{env.PREFIX}_promexport_{node.name}"
 
@@ -687,6 +700,7 @@ class NanoNet:
             name=container_name,
             network_mode="host",
             pid_mode=f"container:{node.container.id}",
+            restart_policy={"Name": "always"},
         )
 
         print("Started exporter:", container.name)
