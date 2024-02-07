@@ -3,7 +3,7 @@ from .caching import memory
 from . import *
 from . import docker
 from .common import *
-from .docker import NanoNet
+from .docker import *
 
 
 @title_bar(name="DISTRIBUTE VOTING WEIGHT UNIFORM")
