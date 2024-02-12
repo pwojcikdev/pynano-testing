@@ -1,4 +1,4 @@
-from concurrent.futures import ProcessPoolExecutor
+import asyncio
 from typing import Protocol
 from .common import title_bar
 
@@ -7,88 +7,74 @@ from nanoprotocol import channel
 from nanoprotocol import blocks
 from nanoprotocol.channel import Channel
 
+from tqdm.asyncio import tqdm
+
 
 class NanoBroadcaster(Protocol):
-    def publish(self, block: dict):
+    async def publish(self, block: dict):
         pass
 
-    def publish_all(self, blocks: list[dict]):
+    async def publish_all(self, blocks: list[dict]):
         pass
 
 
 class NanoNodeBroadcaster:
-    def __init__(self, node: 'NanoNode', parallelism=4):
+    def __init__(self, node: "NanoNode"):
         self.node = node
-        self.pool = ProcessPoolExecutor(
-            initializer=NanoNodeBroadcaster.setup_channel,
-            initargs=(node.host_realtime_port,),
-            max_workers=parallelism,
-        )
 
-    @staticmethod
-    def setup_channel(port):
-        print("connect:", port)
-        global node_broadcaster_channel
-        node_broadcaster_channel = Channel.connect("localhost", port)
+    async def connect(self):
+        self.channel = await self.__setup_channel()
 
-    def publish(self, block_dict: dict):
-        self.pool.submit(NanoNodeBroadcaster.publish_block, block_dict)
+    async def __setup_channel(self):
+        print("connect:", self.node.host_realtime_port)
+        return await Channel.connect("localhost", self.node.host_realtime_port)
 
-    @staticmethod
-    def publish_block(block_dict: dict):
-        # print("publish block:", block_dict)
+    async def publish(self, block_dict: dict):
         try:
-            global node_broadcaster_channel
             block_wrapper = blocks.block_from_dict(block_dict)
-            node_broadcaster_channel.publish_block(block_wrapper)
+            await self.channel.publish_block(block_wrapper)
         except Exception as e:
             print("publish_block error:", e)
             raise
 
-    @staticmethod
-    def publish_all_blocks(blocks):
-        print("publish_all_blocks:", len(blocks))
-        for block in blocks:
-            NanoNodeBroadcaster.publish_block(block)
+    async def publish_all(self, blocks: list[dict]):
+        print("publish_all:", len(blocks))
 
-    def publish_all(self, blocks: list[dict]):
-        print("node publish:", len(blocks))
-        # self.pool.map(NanoNodeBroadcaster.publish_block, blocks, chunksize=1024)
-        # self.pool.map(NanoNodeBroadcaster.publish_block, blocks, chunksize=128)
-        # self.pool.map(NanoNodeBroadcaster.publish_block, blocks, chunksize=16)
-        return self.pool.submit(NanoNodeBroadcaster.publish_all_blocks, blocks)
+        # async with tqdm(total=len(blocks), desc="Publishing Blocks") as pbar:  # Initialize the progress bar
+        # for block in blocks:
+        #     await self.publish(block)
+        #     pbar.update(1)  # Update the progress bar after each block is published
+
+        for block in blocks:
+            await self.publish(block)
 
 
 class NanoNetBroadcaster:
-    def __init__(self, nanonet: 'NanoNet', parallelism=4):
-        self.broadcasters = [
-            NanoNodeBroadcaster(node, parallelism=parallelism) for node in nanonet.nodes
-        ]
+    def __init__(self, nanonet: "NanoNet"):
+        self.broadcasters = [NanoNodeBroadcaster(node) for node in nanonet.nodes]
+        asyncio.run(self.async_connect_all())
 
-    def publish(self, block: dict):
-        for broadcaster in self.broadcasters:
-            broadcaster.publish(block)
+    async def async_connect_all(self):
+        tasks = [broadcaster.connect() for broadcaster in self.broadcasters]
+        await asyncio.gather(*tasks)
 
-    def publish_all(self, blocks: list[dict]):
+    async def async_publish_all(self, blocks: list[dict]):
         print("net broadcasting:", len(blocks))
 
-        # for broadcaster in self.broadcasters:
-        #     broadcaster.publish_all(blocks)
-        futures = [broadcaster.publish_all(blocks) for broadcaster in self.broadcasters]
-        results = [future.result() for future in futures]
+        # async with tqdm(total=len(blocks) * len(self.broadcasters), desc="Net Broadcasting") as pbar:
+        #     tasks = [self.__publish_blocks_with_progress(broadcaster, blocks, pbar) for broadcaster in self.broadcasters]
+        #     await asyncio.gather(*tasks)
 
-        print("done net broadcasting:", len(blocks))
+        tasks = [self.__publish_blocks(broadcaster, blocks) for broadcaster in self.broadcasters]
+        await asyncio.gather(*tasks)
 
+        print("done net broadcasting")
 
-class InMemoryBroadcaster:
-    def __init__(self):
-        self.__blocks = []
+    async def __publish_blocks_with_progress(self, broadcaster, blocks, pbar):
+        await broadcaster.publish_all(blocks)
 
-    def publish(self, block: dict):
-        self.__blocks.append(block)
+    async def __publish_blocks(self, broadcaster, blocks):
+        await broadcaster.publish_all(blocks)
 
     def publish_all(self, blocks: list[dict]):
-        self.__blocks += blocks
-
-    def get_all(self):
-        return self.__blocks
+        asyncio.run(self.async_publish_all(blocks))
